@@ -32,27 +32,86 @@ namespace HazardDetector
                 }
             }
 
-            // keep list of when registers are last available, indexed by register name
-            Dictionary<string, (int, PipelinePosition)> availDict = new Dictionary<string, (int, PipelinePosition)>();
+            // create the pipeline table
+            String[,] table = new String[insructionList.Count, 100]; // 100 columns
 
-            // keep track of column in pipeline execution
-            int col = 0;
-            int offset = 0;
-            foreach (Instruction inst in insructionList)
+            // keep list of when registers are last available, indexed by register name
+            Dictionary<string, (int, PipelinePosition?)> availDict = new Dictionary<string, (int, PipelinePosition?)>();
+
+            List<int> stallCols = new List<int>(); // keep track of cols where stalls are put
+            int lastDColIndex = 0; // keep track of where to put next F
+            for (int i = 0; i < insructionList.Count; i++)
             {
+                Instruction inst = insructionList[i];
                 List<Register> instRegisters = inst.getRegisters();
+
+                // keep track of which registers are needed in the current instruction
+                Dictionary<string, (int, PipelinePosition?)> neededDict = new Dictionary<string, (int, PipelinePosition?)>();
+
+                // iterate through registers in instruction and add to dicts
                 foreach (Register r in instRegisters)
                 {
-                    bool registerInDict = availDict.ContainsKey(r.getName());
-                    if (!registerInDict)
-                    {
-                        availDict.Add(r.getName(), ((int)r.getAvailableNoFwd().Item1 + offset, r.getAvailableNoFwd().Item2));
-                    } else
-                    {
+                    int currNumStalls = stallCols.Count;
 
+                    if (r.getAvailableNoFwd() != (null, null))
+                    {
+                        // get the index of the stage where register is available
+                        int indexAvailable = (int)r.getAvailableNoFwd().Item1 + i + currNumStalls;
+
+                        // add to avail dict if newly found or new availability is later than previous availability col index
+                        (int, PipelinePosition?) availVal;
+                        bool registerInAvailDict = availDict.TryGetValue(r.getName(), out availVal);
+                        if (!registerInAvailDict || availVal.Item1 < indexAvailable)
+                        {
+                            availDict.Add(r.getName(), (indexAvailable, r.getAvailableNoFwd().Item2));
+                        }
                     }
-                    
+
+                    // without adding any new stalls, where is register needed
+                    if (r.getNeededNoFwd() != (null, null))
+                    {
+                        int indexNeeded = (int)r.getNeededNoFwd().Item1 + i + currNumStalls;
+                        neededDict.Add(r.getName(), (indexNeeded, r.getNeededNoFwd().Item2));
+                    }
                 }
+
+                foreach (string registerName in neededDict.Keys)
+                {
+                    if (availDict.ContainsKey(registerName))
+                    {
+                        // get info on where register is available
+                        (int, PipelinePosition?) positionAvail;
+                        availDict.TryGetValue(registerName, out positionAvail);
+                        int indexAvail = positionAvail.Item1;
+                        PipelinePosition? availPos = positionAvail.Item2;
+
+                        // get info on where register is needed
+                        (int, PipelinePosition?) positionNeeded;
+                        neededDict.TryGetValue(registerName, out positionNeeded);
+                        if (positionNeeded != (null, null))
+                        {
+                            // if register is needed, check if needed before register is available
+                            int indexNeeded = positionNeeded.Item1;
+                            PipelinePosition? neededPos = positionNeeded.Item2;
+                            if (indexAvail > indexNeeded) // hazard found
+                            {
+                                // add stalls until aligned or arrow would point forward
+                                int posToAddStalls = availPos > neededPos ? indexAvail + 1 : indexAvail;
+                                for (int j = indexNeeded; j < posToAddStalls; j++)
+                                {
+                                    stallCols.Add(j);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // first instruction, initialize table
+                table[i, lastDColIndex] = "F";
+                table[i, 1] = "D";
+                table[i, 2] = "X";
+                table[i, 3] = "m";
+                table[i, 4] = "w";
             }
 
 

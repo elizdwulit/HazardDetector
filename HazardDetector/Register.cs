@@ -9,10 +9,10 @@ namespace HazardDetector
     public class Register
     {
         string name;
-        (PipelineStage, PipelinePosition) availableNoFwd;
-        (PipelineStage, PipelinePosition) availableWithFwd;
-        (PipelineStage, PipelinePosition) neededNoFwd;
-        (PipelineStage, PipelinePosition) neededWithFwd;
+        (PipelineStage?, PipelinePosition?) availableNoFwd = (null, null);
+        (PipelineStage?, PipelinePosition?) availableWithFwd = (null, null);
+        (PipelineStage?, PipelinePosition?) neededNoFwd = (null, null);
+        (PipelineStage?, PipelinePosition?) neededWithFwd = (null, null);
 
         public Register(string name)
         {
@@ -34,7 +34,7 @@ namespace HazardDetector
             availableNoFwd = (stage, position);
         }
 
-        public (PipelineStage, PipelinePosition) getAvailableNoFwd()
+        public (PipelineStage?, PipelinePosition?) getAvailableNoFwd()
         {
             return availableNoFwd;
         }
@@ -44,7 +44,7 @@ namespace HazardDetector
             availableWithFwd = (stage, position);
         }
 
-        public (PipelineStage, PipelinePosition) getAvailableWithFwd()
+        public (PipelineStage?, PipelinePosition?) getAvailableWithFwd()
         {
             return availableWithFwd;
         }
@@ -54,7 +54,7 @@ namespace HazardDetector
             neededNoFwd = (stage, position);
         }
 
-        public (PipelineStage, PipelinePosition) getNeededNoFwd()
+        public (PipelineStage?, PipelinePosition?) getNeededNoFwd()
         {
             return neededNoFwd;
         }
@@ -64,7 +64,7 @@ namespace HazardDetector
             neededWithFwd = (stage, position);
         }
 
-        public (PipelineStage, PipelinePosition) getNeededWithFwd()
+        public (PipelineStage?, PipelinePosition?) getNeededWithFwd()
         {
             return neededWithFwd;
         }
