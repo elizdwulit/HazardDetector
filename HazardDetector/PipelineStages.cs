@@ -11,12 +11,12 @@ namespace HazardDetector
     /// </summary>
     public enum PipelineStage
     {
-        FORWARD,
-        DECODE,
-        EXECUTE,
-        MEMORY,
-        WRITEBACK,
-        STALL
+        F,
+        D,
+        X,
+        m,
+        w,
+        S
     }
 
     /// <summary>

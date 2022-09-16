@@ -33,13 +33,20 @@ namespace HazardDetector
             }
 
             // create the pipeline table
-            String[,] table = new String[insructionList.Count, 100]; // 100 columns
+            string[,] table = new string[insructionList.Count, 40]; // 100 columns
+            table[0, 0] = "F";
+            table[0, 1] = "D";
+            table[0, 2] = "X";
+            table[0, 3] = "m";
+            table[0, 4] = "w";
 
             // keep list of when registers are last available, indexed by register name
             Dictionary<string, (int, PipelinePosition?)> availDict = new Dictionary<string, (int, PipelinePosition?)>();
 
             List<int> stallCols = new List<int>(); // keep track of cols where stalls are put
-            int lastDColIndex = 0; // keep track of where to put next F
+            int currDColIndex = 1; // keep track of where the 'D' of the previous instruction is
+            int nextDColIndex = 2; // keep track of where the 'D' of the current instruction is located
+            int currNumColsInTable = 5; // keep track of how many cols were used
             for (int i = 0; i < insructionList.Count; i++)
             {
                 Instruction inst = insructionList[i];
@@ -52,7 +59,6 @@ namespace HazardDetector
                 foreach (Register r in instRegisters)
                 {
                     int currNumStalls = stallCols.Count;
-
                     if (r.getAvailableNoFwd() != (null, null))
                     {
                         // get the index of the stage where register is available
@@ -63,58 +69,123 @@ namespace HazardDetector
                         bool registerInAvailDict = availDict.TryGetValue(r.getName(), out availVal);
                         if (!registerInAvailDict || availVal.Item1 < indexAvailable)
                         {
-                            availDict.Add(r.getName(), (indexAvailable, r.getAvailableNoFwd().Item2));
+                            availDict[r.getName()] = (indexAvailable, r.getAvailableNoFwd().Item2);
                         }
                     }
 
                     // without adding any new stalls, where is register needed
-                    if (r.getNeededNoFwd() != (null, null))
+                    // no needed dependencies in first instruction
+                    if (i != 0 && r.getNeededNoFwd() != (null, null))
                     {
                         int indexNeeded = (int)r.getNeededNoFwd().Item1 + i + currNumStalls;
                         neededDict.Add(r.getName(), (indexNeeded, r.getNeededNoFwd().Item2));
                     }
                 }
 
-                foreach (string registerName in neededDict.Keys)
+                if (i != 0)
                 {
-                    if (availDict.ContainsKey(registerName))
+                    int numAddedStalls = 0;
+                    foreach (string registerName in neededDict.Keys)
                     {
-                        // get info on where register is available
-                        (int, PipelinePosition?) positionAvail;
-                        availDict.TryGetValue(registerName, out positionAvail);
-                        int indexAvail = positionAvail.Item1;
-                        PipelinePosition? availPos = positionAvail.Item2;
-
-                        // get info on where register is needed
-                        (int, PipelinePosition?) positionNeeded;
-                        neededDict.TryGetValue(registerName, out positionNeeded);
-                        if (positionNeeded != (null, null))
+                        if (availDict.ContainsKey(registerName))
                         {
-                            // if register is needed, check if needed before register is available
-                            int indexNeeded = positionNeeded.Item1;
-                            PipelinePosition? neededPos = positionNeeded.Item2;
-                            if (indexAvail > indexNeeded) // hazard found
+                            // get info on where register is available
+                            (int, PipelinePosition?) positionAvail;
+                            availDict.TryGetValue(registerName, out positionAvail);
+                            int indexAvail = positionAvail.Item1;
+                            PipelinePosition? availPos = positionAvail.Item2;
+
+                            // get info on where register is needed
+                            (int, PipelinePosition?) positionNeeded;
+                            neededDict.TryGetValue(registerName, out positionNeeded);
+                            if (positionNeeded != (null, null))
                             {
-                                // add stalls until aligned or arrow would point forward
-                                int posToAddStalls = availPos > neededPos ? indexAvail + 1 : indexAvail;
-                                for (int j = indexNeeded; j < posToAddStalls; j++)
+                                // if register is needed, check if needed before register is available
+                                int indexNeeded = positionNeeded.Item1;
+                                PipelinePosition? neededPos = positionNeeded.Item2;
+                                if (indexAvail > indexNeeded) // hazard found
                                 {
-                                    stallCols.Add(j);
+                                    // add stalls until aligned or arrow would point forward
+                                    int posLimitToAddStalls = availPos > neededPos ? indexAvail + 1 : indexAvail;
+                                    for (int j = indexNeeded; j < posLimitToAddStalls; j++)
+                                    {
+                                        stallCols.Add(j);
+                                        numAddedStalls++;
+                                    }
+
+                                    // update the next D col index based on stalls locations
+                                    if (posLimitToAddStalls >= nextDColIndex)
+                                    {
+                                        nextDColIndex = posLimitToAddStalls;
+                                    }
                                 }
                             }
                         }
                     }
+
+                    // construct the row for the table with the pipeline stages and stalls
+                    int pipelineStageInt = 0;
+                    currNumColsInTable += numAddedStalls <= stallCols.Count ? numAddedStalls + 1 : 1;
+                    for (int k = currDColIndex; k < currNumColsInTable; k++)
+                    {
+                        if (!stallCols.Contains(k))
+                        {
+                            table[i, k] = ((PipelineStage)pipelineStageInt).ToString(); // i is the curr instruction row
+                            pipelineStageInt++;
+                        } else
+                        {
+                            table[i, k] = "S"; // STALL
+                        }
+                    }
+
+                    // if no stalls added between 'F' and 'D', only shift the 'D' position by 1 col
+                    if (currDColIndex == nextDColIndex)
+                    {
+                        nextDColIndex++;
+                    }
+                    currDColIndex = nextDColIndex;
                 }
 
-                // first instruction, initialize table
-                table[i, lastDColIndex] = "F";
-                table[i, 1] = "D";
-                table[i, 2] = "X";
-                table[i, 3] = "m";
-                table[i, 4] = "w";
+                // update the avail col location dict if stall(s) added
+                if (stallCols.Count > 0)
+                {
+                    foreach (string registerKey in availDict.Keys)
+                    {
+                        (int, PipelinePosition?) dictVal = availDict[registerKey];
+                        if (dictVal.Item1 < stallCols[stallCols.Count - 1]) // if available before stalls added, update the avail col for that register
+                        {
+                            availDict[registerKey] = (dictVal.Item1 + stallCols.Count, dictVal.Item2);
+                        }
+                    }
+                }
+
             }
 
+            // print the final table
+            printTable(insructionList, table);
 
+            // prevent console window from closing
+            Console.ReadLine();
+        }
+
+        private static void printTable(List<Instruction> insructionList, string[,] table)
+        {
+            for (int i = 0; i < table.GetLength(0); i++)
+            {
+                Console.Write(insructionList[i].getInstructionStr() + "\t");
+                for (int j = 0; j < table.GetLength(1); j++)
+                {
+                    if (table[i, j] == null)
+                    {
+                        Console.Write("  ");
+                    } else
+                    {
+                        Console.Write(table[i, j] + " ");
+                    }
+                    
+                }
+                Console.WriteLine();
+            }
         }
 
         /// <summary>
@@ -122,16 +193,16 @@ namespace HazardDetector
         /// </summary>
         /// <param name="instruction">instruction string to parse</param>
         /// <returns>instruction object with register availability and needed stages</returns>
-        private static Instruction ParseInstruction(string instruction)
+        private static Instruction ParseInstruction(string instructionStr)
         {
             // get the instruction type
-            string[] splitInstruction = instruction.Split(' ');
+            string[] splitInstruction = instructionStr.Split(' ');
             string instructionTypeStr = splitInstruction != null ? splitInstruction[0] : "";
             InstructionType instructionType = GetInstructionType(instructionTypeStr);
 
             // get the registers involved in the instruction
             List<Register> registers = new List<Register>();
-            string[] splitRegisters = instruction.Split(',');
+            string[] splitRegisters = instructionStr.Split(',').Select(r => r.Trim()).ToArray();
             if (splitRegisters != null && splitRegisters.Length > 0)
             {
                 splitRegisters[0] = splitRegisters[0].Split(' ')[1]; // remove the instruction type key
@@ -140,34 +211,42 @@ namespace HazardDetector
             // handle add and subtract instruction types
             if (instructionType == InstructionType.ADD || instructionType == InstructionType.SUB)
             {
+                List<string> evaluatedRegisters = new List<string>();
                 for (int i = 0; i < splitRegisters.Length; i++) // should only be 3 registers max
                 {
+                    // do not re-evaluate registers in the same instruction
+                    if (evaluatedRegisters.Contains(splitRegisters[i]))
+                    {
+                        continue;
+                    }
+
                     // registers can only be prefixed by '$R' or '$t'
                     if (splitRegisters[i].StartsWith("$R") || splitRegisters[i].StartsWith("$t"))
                     {
                         Register r = new Register(splitRegisters[i]);
                         if (i == 0) // first register always where being stored
                         {
-                            r.setAvailableNoFwd(PipelineStage.WRITEBACK, PipelinePosition.MIDDLE);
-                            r.setAvailableWithFwd(PipelineStage.EXECUTE, PipelinePosition.END);
+                            r.setAvailableNoFwd(PipelineStage.w, PipelinePosition.MIDDLE);
+                            r.setAvailableWithFwd(PipelineStage.X, PipelinePosition.END);
                         } else if (i == 1 || i == 2) // 2nd and/or 3rd register is what is being used in ADD/SUB
                         {
-                            r.setNeededNoFwd(PipelineStage.DECODE, PipelinePosition.MIDDLE);
-                            r.setNeededWithFwd(PipelineStage.EXECUTE, PipelinePosition.BEGIN);
+                            r.setNeededNoFwd(PipelineStage.D, PipelinePosition.MIDDLE);
+                            r.setNeededWithFwd(PipelineStage.X, PipelinePosition.BEGIN);
                         }
                         registers.Add(r);
                     } else
                     {
                         // not a register, no dependency
                     }
+                    evaluatedRegisters.Add(splitRegisters[i]);
                 }
             } else if (instructionType == InstructionType.LW)
             {
                 if (splitRegisters[0].StartsWith("$R") || splitRegisters[0].StartsWith("$t"))
                 {
                     Register r = new Register(splitRegisters[0]);
-                    r.setAvailableNoFwd(PipelineStage.WRITEBACK, PipelinePosition.MIDDLE);
-                    r.setAvailableWithFwd(PipelineStage.MEMORY, PipelinePosition.END);
+                    r.setAvailableNoFwd(PipelineStage.w, PipelinePosition.MIDDLE);
+                    r.setAvailableWithFwd(PipelineStage.m, PipelinePosition.END);
                     registers.Add(r);
                 }
                 else
@@ -180,8 +259,8 @@ namespace HazardDetector
                 if (splitRegisters[0].StartsWith("$R") || splitRegisters[0].StartsWith("$t"))
                 {
                     Register r = new Register(splitRegisters[0]);
-                    r.setAvailableNoFwd(PipelineStage.DECODE, PipelinePosition.MIDDLE);
-                    r.setAvailableWithFwd(PipelineStage.WRITEBACK, PipelinePosition.BEGIN);
+                    r.setAvailableNoFwd(PipelineStage.D, PipelinePosition.MIDDLE);
+                    r.setAvailableWithFwd(PipelineStage.w, PipelinePosition.BEGIN);
                     registers.Add(r);
                 }
                 else
@@ -190,21 +269,22 @@ namespace HazardDetector
                 }
             } else
             {
-                Console.WriteLine("Unknown instruction type found in instruction: " + instruction);
+                Console.WriteLine("Unknown instruction type found in instruction: " + instructionStr);
                 return null;
             }
 
-            Instruction instructionObj = new Instruction(instructionType, registers);
+            Instruction instructionObj = new Instruction(instructionStr, instructionType, registers);
             return instructionObj;
         }
 
         private static InstructionType GetInstructionType(string typeStr)
         {
-            switch(typeStr)
+            string typeLowercase = typeStr.ToLower();
+            switch (typeLowercase)
             {
-                case "Add":
+                case "add":
                     return InstructionType.ADD;
-                case "Sub":
+                case "sub":
                     return InstructionType.SUB;
                 case "lw":
                     return InstructionType.LW;

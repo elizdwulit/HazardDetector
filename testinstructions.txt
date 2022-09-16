@@ -1,0 +1,4 @@
+Add $R1, $R1, $R2
+Sub $R2, $R1, $R3
+Sw $R4, 0($R3)
+Add $R1, $R4, 3

@@ -8,13 +8,25 @@ namespace HazardDetector
 {
     public class Instruction
     {
+        string origInstructionStr = "";
         InstructionType type;
         List<Register> registers = new List<Register>();
 
-        public Instruction(InstructionType type, List<Register> registers)
+        public Instruction(string origInstructionStr, InstructionType type, List<Register> registers)
         {
+            this.origInstructionStr = origInstructionStr;
             this.type = type;
             this.registers = registers;
+        }
+
+        public string getInstructionStr()
+        {
+            return origInstructionStr;
+        }
+
+        public void setInstructionStr(string str)
+        {
+            origInstructionStr = str;
         }
 
         public InstructionType getType()
