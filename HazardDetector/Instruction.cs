@@ -8,8 +8,13 @@ namespace HazardDetector
 {
     public class Instruction
     {
+        // the string that the instruction was constructed from
         string origInstructionStr = "";
+
+        // the type of instruction
         InstructionType type;
+
+        // list of registers involved with instruction
         List<Register> registers = new List<Register>();
 
         public Instruction(string origInstructionStr, InstructionType type, List<Register> registers)
