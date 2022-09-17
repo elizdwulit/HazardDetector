@@ -20,9 +20,11 @@ namespace HazardDetector
                 return;
             }
 
+            string filePath = args[0];
+            //bool hasFwdUnit = (int)args[1] == 0;
+
             // read the instructions from the file and create Instruction objects
             List<Instruction> insructionList = new List<Instruction>();
-            string filePath = args[0];
             using (StreamReader sr = File.OpenText(filePath))
             {
                 string s = String.Empty;
@@ -120,7 +122,7 @@ namespace HazardDetector
                                     // update the next D col index based on stalls locations
                                     if (posLimitToAddStalls >= nextDColIndex)
                                     {
-                                        nextDColIndex = posLimitToAddStalls + 1;
+                                        nextDColIndex = posLimitToAddStalls;
                                     }
                                 }
                             }
@@ -183,7 +185,7 @@ namespace HazardDetector
             string[] rows = new string[insructionList.Count];
             for (int i = 0; i < table.GetLength(0); i++)
             {
-                rows[i] = insructionList[i].getInstructionStr() + "    ";
+                rows[i] = insructionList[i].getInstructionStr().PadRight(20);
                 for (int j = 0; j < table.GetLength(1); j++)
                 {
                     if (table[i, j] == null)
