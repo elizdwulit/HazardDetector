@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Data;
 using System.IO;
@@ -41,9 +42,10 @@ namespace HazardDetector
             table[0, 4] = "w";
 
             // keep list of when registers are last available, indexed by register name
-            Dictionary<string, (int, PipelinePosition?)> availDict = new Dictionary<string, (int, PipelinePosition?)>();
+            Dictionary<string, (int, int, PipelinePosition?)> availDict = new Dictionary<string, (int, int, PipelinePosition?)>();
 
             List<int> stallCols = new List<int>(); // keep track of cols where stalls are put
+            HashSet<int> rowsStallsAdded = new HashSet<int>(); // keep track of rows where stalls were added
             int currDColIndex = 1; // keep track of where the 'D' of the previous instruction is
             int nextDColIndex = 2; // keep track of where the 'D' of the current instruction is located
             int currNumColsInTable = 5; // keep track of how many cols were used
@@ -65,11 +67,11 @@ namespace HazardDetector
                         int indexAvailable = (int)r.getAvailableNoFwd().Item1 + i + currNumStalls;
 
                         // add to avail dict if newly found or new availability is later than previous availability col index
-                        (int, PipelinePosition?) availVal;
+                        (int, int, PipelinePosition?) availVal;
                         bool registerInAvailDict = availDict.TryGetValue(r.getName(), out availVal);
-                        if (!registerInAvailDict || availVal.Item1 < indexAvailable)
+                        if (!registerInAvailDict || availVal.Item2 < indexAvailable)
                         {
-                            availDict[r.getName()] = (indexAvailable, r.getAvailableNoFwd().Item2);
+                            availDict[r.getName()] = (i, indexAvailable, r.getAvailableNoFwd().Item2);
                         }
                     }
 
@@ -82,6 +84,7 @@ namespace HazardDetector
                     }
                 }
 
+                // check if stalls are needed
                 if (i != 0)
                 {
                     int numAddedStalls = 0;
@@ -90,10 +93,10 @@ namespace HazardDetector
                         if (availDict.ContainsKey(registerName))
                         {
                             // get info on where register is available
-                            (int, PipelinePosition?) positionAvail;
+                            (int, int, PipelinePosition?) positionAvail;
                             availDict.TryGetValue(registerName, out positionAvail);
-                            int indexAvail = positionAvail.Item1;
-                            PipelinePosition? availPos = positionAvail.Item2;
+                            int indexAvail = positionAvail.Item2;
+                            PipelinePosition? availPos = positionAvail.Item3;
 
                             // get info on where register is needed
                             (int, PipelinePosition?) positionNeeded;
@@ -103,20 +106,21 @@ namespace HazardDetector
                                 // if register is needed, check if needed before register is available
                                 int indexNeeded = positionNeeded.Item1;
                                 PipelinePosition? neededPos = positionNeeded.Item2;
-                                if (indexAvail > indexNeeded) // hazard found
+                                if (indexAvail >= indexNeeded) // hazard found
                                 {
                                     // add stalls until aligned or arrow would point forward
                                     int posLimitToAddStalls = availPos > neededPos ? indexAvail + 1 : indexAvail;
                                     for (int j = indexNeeded; j < posLimitToAddStalls; j++)
                                     {
                                         stallCols.Add(j);
+                                        rowsStallsAdded.Add(i);
                                         numAddedStalls++;
                                     }
 
                                     // update the next D col index based on stalls locations
                                     if (posLimitToAddStalls >= nextDColIndex)
                                     {
-                                        nextDColIndex = posLimitToAddStalls;
+                                        nextDColIndex = posLimitToAddStalls + 1;
                                     }
                                 }
                             }
@@ -149,12 +153,18 @@ namespace HazardDetector
                 // update the avail col location dict if stall(s) added
                 if (stallCols.Count > 0)
                 {
-                    foreach (string registerKey in availDict.Keys)
+                    List<string> availDictKeys = new List<string>(availDict.Keys);
+                    foreach (string registerKey in availDictKeys)
                     {
-                        (int, PipelinePosition?) dictVal = availDict[registerKey];
-                        if (dictVal.Item1 < stallCols[stallCols.Count - 1]) // if available before stalls added, update the avail col for that register
+                        (int, int, PipelinePosition?) availDictVal = availDict[registerKey];
+                        int rowAvail = availDictVal.Item1;
+                        int colAvail = availDictVal.Item2;
+                        bool stallAddedInCurrentIteration = rowsStallsAdded.Contains(i);
+                        // if available before stalls added, or if added to avail dict in this iteration before stalls added,
+                        // update the avail col for that register
+                        if (colAvail <= stallCols[stallCols.Count - 1] || (stallAddedInCurrentIteration && rowAvail >= i)) 
                         {
-                            availDict[registerKey] = (dictVal.Item1 + stallCols.Count, dictVal.Item2);
+                            availDict[registerKey] = (i, availDictVal.Item2 + stallCols.Count, availDictVal.Item3);
                         }
                     }
                 }
@@ -170,21 +180,22 @@ namespace HazardDetector
 
         private static void printTable(List<Instruction> insructionList, string[,] table)
         {
+            string[] rows = new string[insructionList.Count];
             for (int i = 0; i < table.GetLength(0); i++)
             {
-                Console.Write(insructionList[i].getInstructionStr() + "\t");
+                rows[i] = insructionList[i].getInstructionStr() + "    ";
                 for (int j = 0; j < table.GetLength(1); j++)
                 {
                     if (table[i, j] == null)
                     {
-                        Console.Write("  ");
+                        rows[i] += ("  ");
                     } else
                     {
-                        Console.Write(table[i, j] + " ");
+                        rows[i] += table[i, j] + " ";                    
                     }
                     
                 }
-                Console.WriteLine();
+                Console.WriteLine(rows[i]);
             }
         }
 
