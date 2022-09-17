@@ -14,14 +14,15 @@ namespace HazardDetector
         public static void Main(string[] args)
         {
             // check that file was provided
-            if (args.Length == 0)
+            if (args.Length !=  2)
             {
-                Console.WriteLine("Please provide a file path");
+                Console.WriteLine("Please provide a file path and flag indicating if forwarding unit should be used.");
+                Console.WriteLine("Usage: <0 = use fwding unit | 1 = no fwding unit> <full file path to instructions>");
                 return;
             }
 
-            string filePath = args[0];
-            //bool hasFwdUnit = (int)args[1] == 0;
+            bool hasFwdUnit = Int32.Parse(args[0]) == 0;
+            string filePath = args[1];
 
             // read the instructions from the file and create Instruction objects
             List<Instruction> insructionList = new List<Instruction>();
@@ -66,14 +67,16 @@ namespace HazardDetector
                     if (r.getAvailableNoFwd() != (null, null))
                     {
                         // get the index of the stage where register is available
-                        int indexAvailable = (int)r.getAvailableNoFwd().Item1 + i + currNumStalls;
+                        int indexAvailable = hasFwdUnit ? (int)r.getAvailableWithFwd().Item1 + i + currNumStalls 
+                            : (int)r.getAvailableNoFwd().Item1 + i + currNumStalls;
 
                         // add to avail dict if newly found or new availability is later than previous availability col index
                         (int, int, PipelinePosition?) availVal;
                         bool registerInAvailDict = availDict.TryGetValue(r.getName(), out availVal);
                         if (!registerInAvailDict || availVal.Item2 < indexAvailable)
                         {
-                            availDict[r.getName()] = (i, indexAvailable, r.getAvailableNoFwd().Item2);
+                            PipelinePosition? pos = hasFwdUnit ? r.getAvailableWithFwd().Item2 : r.getAvailableNoFwd().Item2;
+                            availDict[r.getName()] = (i, indexAvailable, pos);
                         }
                     }
 
@@ -81,8 +84,10 @@ namespace HazardDetector
                     // no needed dependencies in first instruction
                     if (i != 0 && r.getNeededNoFwd() != (null, null))
                     {
-                        int indexNeeded = (int)r.getNeededNoFwd().Item1 + i + currNumStalls;
-                        neededDict.Add(r.getName(), (indexNeeded, r.getNeededNoFwd().Item2));
+                        int indexNeeded = hasFwdUnit ? (int)r.getNeededWithFwd().Item1 + i + currNumStalls
+                            : (int)r.getNeededNoFwd().Item1 + i + currNumStalls;
+                        PipelinePosition? pos = hasFwdUnit ? r.getNeededWithFwd().Item2 : r.getNeededNoFwd().Item2;
+                        neededDict.Add(r.getName(), (indexNeeded, pos));
                     }
                 }
 
@@ -180,6 +185,11 @@ namespace HazardDetector
             Console.ReadLine();
         }
 
+        /// <summary>
+        /// Print the instruction pipeline table to console
+        /// </summary>
+        /// <param name="insructionList"></param>
+        /// <param name="table"></param>
         private static void printTable(List<Instruction> insructionList, string[,] table)
         {
             string[] rows = new string[insructionList.Count];
@@ -290,6 +300,11 @@ namespace HazardDetector
             return instructionObj;
         }
 
+        /// <summary>
+        /// Get the instruction type obj
+        /// </summary>
+        /// <param name="typeStr"></param>
+        /// <returns></returns>
         private static InstructionType GetInstructionType(string typeStr)
         {
             string typeLowercase = typeStr.ToLower();
