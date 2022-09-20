@@ -44,6 +44,8 @@ namespace HazardDetector
             table[0, 3] = "m";
             table[0, 4] = "w";
 
+            HashSet<string> hazardsList = new HashSet<string>();
+
             // keep list of when registers are last available, indexed by register name
             Dictionary<string, (int, int, PipelinePosition?)> availDict = new Dictionary<string, (int, int, PipelinePosition?)>();
 
@@ -122,6 +124,7 @@ namespace HazardDetector
                                         stallCols.Add(j);
                                         rowsStallsAdded.Add(i);
                                         numAddedStalls++;
+                                        hazardsList.Add("Hazard: " + inst.getInstructionStr() + " | Register: " + registerName);
                                     }
 
                                     // update the next D col index based on stalls locations
@@ -179,7 +182,7 @@ namespace HazardDetector
             }
 
             // print the final table
-            printTable(insructionList, table);
+            printTable(insructionList, table, hazardsList);
 
             // prevent console window from closing
             Console.ReadLine();
@@ -190,8 +193,15 @@ namespace HazardDetector
         /// </summary>
         /// <param name="insructionList"></param>
         /// <param name="table"></param>
-        private static void printTable(List<Instruction> insructionList, string[,] table)
+        private static void printTable(List<Instruction> insructionList, string[,] table, HashSet<string> hazards)
         {
+            foreach (string hazard in hazards)
+            {
+                Console.WriteLine(hazard);
+            }
+
+            Console.WriteLine();
+
             string[] rows = new string[insructionList.Count];
             for (int i = 0; i < table.GetLength(0); i++)
             {
